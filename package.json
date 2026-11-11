@@ -1,0 +1,7 @@
+{
+  "name": "resume-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Resumos, pontos prováveis de prova e chat com PDFs de estudo.",
+  "engines": { "node": ">=18" }
+}

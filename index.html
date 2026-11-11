@@ -1,0 +1,888 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Resumê</title>
+<meta name="description" content="Resumos, pontos prováveis de prova e chat com seus PDFs de estudo.">
+<meta name="theme-color" content="#F3EEDE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1B1E17" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Resumê">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+  :root{color-scheme:light; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);}
+  body{margin:0; font:14px system-ui,sans-serif;}
+  img{max-width:100%;}
+  [hidden]{display:none!important;}
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@1,600&family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  /* Layout concept: fixed top bar + segmented tab nav, three swappable view
+     panels below, full-screen overlay for a single document's detail/chat. */
+  :root{
+    --bg:#F3EEDE;
+    --surface:#FBF8F1;
+    --surface-2:#EAE3EC;
+    --fg:#272A20;
+    --muted:#746F58;
+    --sage:#6E8B64;
+    --sage-deep:#52704A;
+    --terracotta:#B8603D;
+    --border:#DED0AC;
+    --lilac:#8A72B8;
+    --lilac-strong:#6B52A0;
+    --lilac-soft:#E8E1F2;
+    --font-brand:'Fraunces', Georgia, serif;
+    --font-head:'Space Grotesk', 'Inter', sans-serif;
+    --font-body:'Inter', system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#1B1E17;
+      --surface:#242821;
+      --surface-2:#2C3126;
+      --fg:#ECE7D5;
+      --muted:#A6A288;
+      --sage:#8FAE82;
+      --sage-deep:#A9C79C;
+      --terracotta:#DE8A61;
+      --border:#3A4132;
+      --lilac:#B9A6E4;
+      --lilac-strong:#7D63B8;
+      --lilac-soft:#332C44;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#1B1E17;
+    --surface:#242821;
+    --surface-2:#2C3126;
+    --fg:#ECE7D5;
+    --muted:#A6A288;
+    --sage:#8FAE82;
+    --sage-deep:#A9C79C;
+    --terracotta:#DE8A61;
+    --border:#3A4132;
+    --lilac:#B9A6E4;
+    --lilac-strong:#7D63B8;
+    --lilac-soft:#332C44;
+    color-scheme: dark;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--fg);
+    font-family:var(--font-body);
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.brand,button,.tab{font-family:var(--font-head);}
+  .gutter{
+    padding-left:max(16px, env(safe-area-inset-left,0px));
+    padding-right:max(16px, env(safe-area-inset-right,0px));
+  }
+  button{font:inherit;}
+  [hidden]{display:none!important;}
+
+  /* ---------- splash ---------- */
+  #splash{
+    position:fixed; inset:0; z-index:100;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:10px;
+    background:var(--bg);
+    transition:opacity .45s ease;
+  }
+  #splash.fade{opacity:0; pointer-events:none;}
+  #splash .mark{width:96px; height:96px; animation:pulse 1.8s ease-in-out infinite;}
+  #splash .mark svg{width:100%; height:100%; display:block; filter:drop-shadow(0 10px 20px rgba(107,82,160,.28));}
+  .loadbar{width:150px; height:4px; border-radius:99px; background:var(--lilac-soft); overflow:hidden; margin-top:16px;}
+  .loadbar span{display:block; height:100%; width:0; border-radius:inherit;
+    background:linear-gradient(90deg,var(--sage),var(--lilac)); animation:load 3s ease-in-out forwards;}
+  @keyframes load{to{width:100%;}}
+  @keyframes pulse{
+    0%,100%{transform:scale(1); opacity:1;}
+    50%{transform:scale(1.08); opacity:.85;}
+  }
+  #splash .brand{
+    font-family:var(--font-brand); font-style:italic; font-weight:600;
+    font-size:2rem; color:var(--fg);
+  }
+  #splash .tagline{color:var(--muted); font-size:.85rem; letter-spacing:.02em;}
+  @media (prefers-reduced-motion:reduce){
+    #splash .mark{animation:none;}
+    .loadbar span{animation:none; width:100%;}
+  }
+
+  /* ---------- app shell ---------- */
+  #app{min-height:100%; display:flex; flex-direction:column;}
+  body::before{
+    content:""; position:fixed; inset:0 0 auto; z-index:10;
+    height:env(safe-area-inset-top,0px); background:var(--bg);
+  }
+  header#topbar{
+    position:sticky; top:env(safe-area-inset-top,0px); z-index:9;
+    background:var(--bg);
+    border-bottom:1px solid var(--border);
+    padding-block:14px;
+  }
+  #topbar .row{display:flex; align-items:center; gap:10px; max-width:720px; margin:0 auto;}
+  #topbar .mark{width:34px; height:34px; flex:none;}
+  #topbar .mark svg{width:100%; height:100%; display:block;}
+  #topbar .brand{font-family:var(--font-brand); font-style:italic; font-weight:600; font-size:1.3rem;}
+  #topbar .tagline{color:var(--muted); font-size:.78rem; margin-left:auto; display:none;}
+  @media (min-width:480px){ #topbar .tagline{display:block;} }
+
+  nav#tabs{
+    position:sticky; top:calc(env(safe-area-inset-top,0px) + 62px); z-index:8;
+    background:var(--bg); border-bottom:1px solid var(--border);
+    padding-block:10px;
+  }
+  nav#tabs .row{
+    max-width:720px; margin:0 auto; display:flex; gap:6px;
+    background:var(--surface-2); padding:4px; border-radius:999px;
+  }
+  .tab{
+    flex:1; border:none; background:transparent; color:var(--muted);
+    padding:9px 10px; border-radius:999px; font-size:.84rem; font-weight:600;
+    cursor:pointer; transition:background .15s ease, color .15s ease;
+    min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .tab:hover{color:var(--fg);}
+  .tab.active{background:var(--lilac-strong); color:#fff;}
+  .tab:focus-visible{outline:2px solid var(--sage-deep); outline-offset:2px;}
+
+  main#views{flex:1; max-width:720px; width:100%; margin:0 auto; padding-block:22px 48px;}
+  section[data-view]{display:flex; flex-direction:column; gap:16px;}
+
+  .empty{
+    text-align:center; color:var(--muted); padding:48px 20px;
+    display:flex; flex-direction:column; gap:8px; align-items:center;
+  }
+  .empty svg{width:34px; height:34px; opacity:.6;}
+  .empty strong{color:var(--fg); font-family:var(--font-head); font-size:1rem;}
+
+  /* ---------- dropzone / new ---------- */
+  #dropzone{
+    border:2px dashed var(--border); border-radius:18px;
+    background:var(--surface);
+    padding:40px 20px; text-align:center; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; gap:10px;
+    transition:border-color .15s ease, background .15s ease;
+  }
+  #dropzone:hover, #dropzone.drag{border-color:var(--lilac); background:var(--lilac-soft);}
+  #dropzone svg{width:30px; height:30px; color:var(--lilac);}
+  #dropzone h2{margin:0; font-size:1.05rem;}
+  #dropzone p{margin:0; color:var(--muted); font-size:.85rem; max-width:34ch;}
+  #fileInput{display:none;}
+
+  #processing{
+    display:flex; flex-direction:column; align-items:center; gap:14px;
+    padding:52px 20px; text-align:center;
+  }
+  .spinner{
+    width:30px; height:30px; border-radius:50%;
+    border:3px solid var(--lilac-soft); border-top-color:var(--lilac);
+    animation:spin .8s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+  #processing p{margin:0; color:var(--muted); font-size:.9rem;}
+  #processing .filename{color:var(--fg); font-weight:600; font-size:.95rem;}
+
+  .notice{
+    border:1px solid var(--border); background:var(--surface);
+    border-radius:12px; padding:12px 14px; color:var(--muted); font-size:.82rem;
+  }
+  .notice.error{border-color:var(--terracotta); color:var(--terracotta);}
+
+  /* ---------- history / important grids ---------- */
+  .grid{display:grid; grid-template-columns:1fr; gap:12px;}
+  @media (min-width:560px){ .grid{grid-template-columns:1fr 1fr;} }
+
+  .card{
+    background:var(--surface); border:1px solid var(--border); border-radius:16px;
+    padding:14px 14px 10px; display:flex; flex-direction:column; gap:8px;
+    cursor:pointer; min-width:0;
+    transition:border-color .15s ease, transform .1s ease;
+  }
+  .card:hover{border-color:var(--lilac);}
+  .card:active{transform:scale(.99);}
+  .card h3{margin:0; font-size:.98rem; line-height:1.3;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;}
+  .card .date{color:var(--muted); font-size:.74rem; letter-spacing:.02em;}
+  .card .snippet{color:var(--muted); font-size:.82rem; line-height:1.4;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;}
+  .card .footer{display:flex; justify-content:flex-end; gap:4px; margin-top:2px;}
+  .icon-btn{
+    border:none; background:transparent; color:var(--muted);
+    width:32px; height:32px; border-radius:9px; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; transition:background .15s ease, color .15s ease;
+  }
+  .icon-btn svg{width:16px; height:16px;}
+  .icon-btn:hover{background:var(--surface-2); color:var(--fg);}
+  .icon-btn.active{color:var(--terracotta);}
+  .icon-btn.danger-confirm{color:#fff; background:var(--terracotta); width:auto; padding:0 10px; font-size:.72rem; font-weight:600; gap:4px;}
+  .icon-btn:focus-visible{outline:2px solid var(--sage-deep); outline-offset:1px;}
+
+  /* ---------- overlay / detail ---------- */
+  #overlay{
+    position:fixed; inset:0; z-index:50; background:var(--bg);
+    display:flex; flex-direction:column;
+  }
+  #overlay .ohead{
+    padding-top:env(safe-area-inset-top,0px);
+    border-bottom:1px solid var(--border);
+    background:var(--bg);
+  }
+  #overlay .ohead .row{
+    display:flex; align-items:flex-start; gap:10px; padding-block:14px;
+    max-width:720px; margin:0 auto;
+  }
+  #overlay .ohead .titles{flex:1; min-width:0;}
+  #overlay .ohead h2{margin:0 0 2px; font-size:1.05rem; line-height:1.3;}
+  #overlay .ohead .date{color:var(--muted); font-size:.76rem;}
+  #overlay .actions{display:flex; gap:4px; flex:none;}
+
+  #overlay .obody{flex:1; overflow-y:auto;}
+  #overlay .obody .inner{max-width:720px; margin:0 auto; padding-block:18px 14px; display:flex; flex-direction:column; gap:18px;}
+
+  .section-title{
+    font-size:.74rem; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+    color:var(--muted); margin:0 0 8px;
+  }
+  .section-title.accent{color:var(--terracotta);}
+
+  .panel{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:16px;}
+  .panel p{margin:0; line-height:1.55; font-size:.92rem;}
+
+  .highlights{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px;}
+  .highlights li{
+    display:flex; gap:10px; align-items:flex-start; font-size:.9rem; line-height:1.45;
+  }
+  .highlights li::before{
+    content:""; width:7px; height:7px; border-radius:50%; background:var(--terracotta);
+    margin-top:7px; flex:none;
+  }
+
+  /* ---------- chat ---------- */
+  #chat{display:flex; flex-direction:column; gap:10px;}
+  #chatLog{display:flex; flex-direction:column; gap:10px;}
+  .msg{max-width:84%; padding:10px 13px; border-radius:16px; font-size:.88rem; line-height:1.45;}
+  .msg.user{align-self:flex-end; background:var(--lilac-strong); color:#fff; border-bottom-right-radius:5px;}
+  .msg.assistant{align-self:flex-start; background:var(--lilac-soft); color:var(--fg); border-bottom-left-radius:5px;}
+  .msg.thinking{align-self:flex-start; background:var(--surface-2); color:var(--muted); font-style:italic;}
+
+  #chatBar{
+    position:sticky; bottom:0;
+    background:var(--bg); border-top:1px solid var(--border);
+    padding-block:10px calc(10px + env(safe-area-inset-bottom,0px));
+  }
+  #chatBar .row{max-width:720px; margin:0 auto; display:flex; gap:8px;}
+  #chatInput{
+    flex:1; min-width:0; border:1px solid var(--border); border-radius:14px;
+    padding:11px 14px; font-size:.9rem; background:var(--surface); color:var(--fg);
+    font-family:var(--font-body);
+  }
+  #chatInput:focus{outline:none; border-color:var(--lilac);}
+  #chatSend{
+    flex:none; width:44px; height:44px; border-radius:14px; border:none;
+    background:var(--lilac-strong); color:#fff; display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+  }
+  #chatSend:disabled{opacity:.5; cursor:default;}
+  #chatSend svg{width:18px; height:18px;}
+</style>
+
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs><linearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6E8B64"/><stop offset="1" stop-color="#8A72B8"/></linearGradient></defs>
+  <symbol id="logo" viewBox="0 0 64 64">
+    <rect width="64" height="64" rx="18" fill="url(#logoGrad)"/>
+    <path d="M20 15h17l9 9v26a2.5 2.5 0 0 1-2.5 2.5h-23.5A2.5 2.5 0 0 1 17.5 50V17.5A2.5 2.5 0 0 1 20 15Z" fill="#FBF8F1"/>
+    <path d="M37 15v7.5a1.5 1.5 0 0 0 1.5 1.5H46Z" fill="#D9CCEE"/>
+    <rect x="22" y="28" width="22" height="6" rx="3" fill="#F2B79A"/>
+    <rect x="24" y="30" width="18" height="2.4" rx="1.2" fill="#3F5A39"/>
+    <rect x="24" y="38" width="18" height="2.4" rx="1.2" fill="#8A9B82"/>
+    <rect x="24" y="44" width="11" height="2.4" rx="1.2" fill="#8A9B82"/>
+    <path d="M42 9.5l4-3.5 4 3.5" fill="none" stroke="#FBF8F1" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+</svg>
+
+<div id="splash">
+  <div class="mark"><svg viewBox="0 0 64 64" aria-hidden="true"><use href="#logo"/></svg></div>
+  <div class="brand">Resumê</div>
+  <div class="tagline">organizando o que importa no seu material</div>
+  <div class="loadbar"><span></span></div>
+</div>
+
+<div id="app">
+  <header id="topbar" class="gutter">
+    <div class="row">
+      <div class="mark"><svg viewBox="0 0 64 64" aria-hidden="true"><use href="#logo"/></svg></div>
+      <div class="brand">Resumê</div>
+      <div class="tagline">resumos e pontos-chave do seu material</div>
+    </div>
+  </header>
+
+  <nav id="tabs" class="gutter">
+    <div class="row">
+      <button class="tab active" data-tab="new">Novo PDF</button>
+      <button class="tab" data-tab="history">Histórico</button>
+      <button class="tab" data-tab="important">Importantes</button>
+    </div>
+  </nav>
+
+  <main id="views" class="gutter">
+    <section data-view="new">
+      <div id="dropzone">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 15V4m0 0L8 8m4-4 4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <h2>Solte um PDF aqui</h2>
+        <p>ou toque para escolher um arquivo de estudo. Nada é enviado para servidores externos além da leitura com IA.</p>
+      </div>
+      <input id="fileInput" type="file" accept="application/pdf">
+
+      <div id="processing" hidden>
+        <div class="spinner"></div>
+        <div class="filename" id="processingFile"></div>
+        <p id="processingStep">Lendo o PDF...</p>
+      </div>
+
+      <div id="newError" class="notice error" hidden></div>
+    </section>
+
+    <section data-view="history" hidden>
+      <div id="historyNote" class="notice" hidden></div>
+      <div id="historyGrid" class="grid"></div>
+      <div id="historyEmpty" class="empty" hidden>
+        <svg viewBox="0 0 24 24" fill="none"><path d="M5 4h10l4 4v12H5V4Z" stroke="currentColor" stroke-width="1.5"/></svg>
+        <strong>Nenhum PDF ainda</strong>
+        <span>Envie um material na aba Novo PDF para começar.</span>
+      </div>
+    </section>
+
+    <section data-view="important" hidden>
+      <div id="importantGrid" class="grid"></div>
+      <div id="importantEmpty" class="empty" hidden>
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 3.5 14.6 9l6 .9-4.3 4.2 1 6-5.3-2.8-5.3 2.8 1-6L3.4 9.9l6-.9L12 3.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        <strong>Nada marcado como importante</strong>
+        <span>Toque na estrela de um resumo para guardá-lo aqui.</span>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="overlay" hidden>
+  <div class="ohead gutter">
+    <div class="row">
+      <button class="icon-btn" id="overlayClose" aria-label="Fechar">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <div class="titles">
+        <h2 id="overlayTitle"></h2>
+        <div class="date" id="overlayDate"></div>
+      </div>
+      <div class="actions">
+        <button class="icon-btn" id="overlayStar" aria-label="Marcar como importante">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 3.5 14.6 9l6 .9-4.3 4.2 1 6-5.3-2.8-5.3 2.8 1-6L3.4 9.9l6-.9L12 3.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="icon-btn" id="overlayTrash" aria-label="Excluir">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-9 0 1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="obody gutter">
+    <div class="inner">
+      <div class="panel">
+        <p class="section-title">Resumo</p>
+        <p id="overlaySummary"></p>
+      </div>
+
+      <div class="panel">
+        <p class="section-title accent">Pontos prováveis de prova</p>
+        <ul class="highlights" id="overlayHighlights"></ul>
+      </div>
+
+      <div id="chat">
+        <p class="section-title">Tire dúvidas sobre este PDF</p>
+        <div id="chatLog"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="chatBar" class="gutter">
+    <div class="row">
+      <input id="chatInput" type="text" placeholder="Pergunte algo sobre o conteúdo...">
+      <button id="chatSend" aria-label="Enviar">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M4 12h15m0 0-6-6m6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="standalone.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  // ---------- capabilities ----------
+  var sample = null, db = null, userCap = null, uid = null, usingCloud = false;
+  var STORAGE_KEY = "resume_docs_v1";
+  var shownAt = document.visibilityState === "visible" ? Date.now() : 0;
+  document.addEventListener("visibilitychange", function(){
+    if (!shownAt && document.visibilityState === "visible") shownAt = Date.now();
+  });
+
+  function boot(){
+    window.claude && window.claude.use ? initCaps().then(start) : start();
+  }
+
+  async function initCaps(){
+    try { sample = await window.claude.use("sample"); } catch(e){ sample = null; }
+    try { db = await window.claude.use("db"); } catch(e){ db = null; }
+    try { userCap = await window.claude.use("user"); } catch(e){ userCap = null; }
+    if (db && userCap){
+      try { uid = await userCap.id(); } catch(e){ uid = null; }
+      usingCloud = !!uid;
+    }
+  }
+
+  function userCol(){
+    return db.collection("data/users/" + uid);
+  }
+
+  // ---------- local storage fallback ----------
+  function lsRead(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch(e){ return []; }
+  }
+  function lsWrite(list){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); } catch(e){}
+  }
+
+  // ---------- state ----------
+  var docs = []; // {id,title,createdAt,summary,highlights,chat,important,text}
+  var activeTab = "new";
+  var activeOverlayId = null;
+
+  async function loadDocs(){
+    if (usingCloud){
+      try{
+        var snap = await userCol().orderBy("createdAt","desc").limit(200).get();
+        docs = snap.docs.map(function(d){ var v = d.data()||{}; v.id = d.id; return v; });
+      } catch(e){ docs = []; }
+    } else {
+      docs = lsRead();
+      docs.sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
+    }
+    renderHistory();
+    renderImportant();
+  }
+
+  function persistNew(doc){
+    if (usingCloud){
+      var newRef = userCol().doc();
+      return newRef.set(doc).then(function(){ return newRef; }).catch(function(){ return null; });
+    } else {
+      var list = lsRead();
+      doc.id = "d" + Date.now() + Math.random().toString(36).slice(2,7);
+      list.unshift(doc);
+      lsWrite(list);
+      return Promise.resolve({id: doc.id});
+    }
+  }
+
+  function persistUpdate(id, patch){
+    if (usingCloud){
+      return userCol().doc(id).update(patch).catch(function(){});
+    } else {
+      var list = lsRead();
+      var idx = list.findIndex(function(d){ return d.id === id; });
+      if (idx > -1){ Object.assign(list[idx], patch); lsWrite(list); }
+      return Promise.resolve();
+    }
+  }
+
+  function persistDelete(id){
+    if (usingCloud){
+      return userCol().doc(id).delete().catch(function(){});
+    } else {
+      var list = lsRead().filter(function(d){ return d.id !== id; });
+      lsWrite(list);
+      return Promise.resolve();
+    }
+  }
+
+  function findDoc(id){
+    return docs.find(function(d){ return d.id === id; });
+  }
+
+  // ---------- helpers ----------
+  function formatDate(iso){
+    try{
+      var d = new Date(iso);
+      return d.toLocaleDateString("pt-BR", {day:"numeric", month:"long", year:"numeric"});
+    } catch(e){ return ""; }
+  }
+  function escapeHtml(s){
+    return String(s||"").replace(/[&<>"']/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+    });
+  }
+
+  // ---------- tabs ----------
+  document.querySelectorAll(".tab").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      activeTab = btn.getAttribute("data-tab");
+      document.querySelectorAll(".tab").forEach(function(b){ b.classList.toggle("active", b===btn); });
+      document.querySelectorAll("section[data-view]").forEach(function(sec){
+        sec.hidden = sec.getAttribute("data-view") !== activeTab;
+      });
+    });
+  });
+
+  // ---------- dropzone ----------
+  var dropzone = document.getElementById("dropzone");
+  var fileInput = document.getElementById("fileInput");
+  dropzone.addEventListener("click", function(){ fileInput.click(); });
+  dropzone.addEventListener("dragover", function(e){ e.preventDefault(); dropzone.classList.add("drag"); });
+  dropzone.addEventListener("dragleave", function(){ dropzone.classList.remove("drag"); });
+  dropzone.addEventListener("drop", function(e){
+    e.preventDefault(); dropzone.classList.remove("drag");
+    var f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) handleFile(f);
+  });
+  fileInput.addEventListener("change", function(){
+    var f = fileInput.files && fileInput.files[0];
+    if (f) handleFile(f);
+    fileInput.value = "";
+  });
+
+  var processingEl = document.getElementById("processing");
+  var processingFile = document.getElementById("processingFile");
+  var processingStep = document.getElementById("processingStep");
+  var newError = document.getElementById("newError");
+
+  async function handleFile(file){
+    newError.hidden = true;
+    if (file.type !== "application/pdf" && !/\.pdf$/i.test(file.name)){
+      newError.hidden = false;
+      newError.textContent = "Envie um arquivo em formato PDF.";
+      return;
+    }
+    dropzone.hidden = true;
+    processingEl.hidden = false;
+    processingFile.textContent = file.name;
+    processingStep.textContent = "Lendo o PDF...";
+
+    try{
+      var text = await extractPdfText(file);
+      if (!text || text.trim().length < 20){
+        throw { step:"extract", message:"Não consegui ler texto neste PDF. Ele pode estar escaneado como imagem." };
+      }
+
+      var titulo = file.name.replace(/\.pdf$/i, "");
+      var resumo = "";
+      var destaques = [];
+
+      if (sample){
+        processingStep.textContent = "Gerando resumo e pontos-chave...";
+        try{
+          var insight = await generateInsights(text);
+          if (insight && insight.resumo){
+            titulo = insight.titulo || titulo;
+            resumo = insight.resumo;
+            destaques = Array.isArray(insight.destaques) ? insight.destaques : [];
+          } else {
+            throw new Error("resposta vazia");
+          }
+        } catch(e){
+          resumo = "Não foi possível gerar o resumo automático agora. Você ainda pode conversar sobre o conteúdo abaixo.";
+        }
+      } else {
+        resumo = "A geração por IA não está disponível nesta visualização. Mostrando apenas o material carregado.";
+      }
+
+      var doc = {
+        title: titulo.trim().slice(0,120),
+        createdAt: new Date().toISOString(),
+        summary: resumo,
+        highlights: destaques.slice(0,7),
+        chat: [],
+        important: false,
+        text: text.slice(0, 20000)
+      };
+
+      var ref = await persistNew(doc);
+      doc.id = ref && ref.id ? ref.id : (doc.id || ("tmp" + Date.now()));
+      docs.unshift(doc);
+      renderHistory();
+      renderImportant();
+      openOverlay(doc.id);
+    } catch(err){
+      newError.hidden = false;
+      newError.textContent = (err && err.message) ? err.message : "Algo deu errado ao processar o PDF. Tente novamente.";
+    } finally {
+      processingEl.hidden = true;
+      dropzone.hidden = false;
+    }
+  }
+
+  async function extractPdfText(file){
+    if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions){
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    }
+    var buf = await file.arrayBuffer();
+    var pdf = await window.pdfjsLib.getDocument({data: buf}).promise;
+    var text = "";
+    var maxPages = Math.min(pdf.numPages, 50);
+    for (var i=1; i<=maxPages; i++){
+      var page = await pdf.getPage(i);
+      var content = await page.getTextContent();
+      text += content.items.map(function(it){ return it.str; }).join(" ") + "\n\n";
+      if (text.length > 30000) break;
+    }
+    return text.trim();
+  }
+
+  async function generateInsights(text){
+    var prompt = "Você é um assistente de estudos. Abaixo está o conteúdo extraído de um PDF de estudo enviado pelo usuário.\n\n\"\"\"\n" +
+      text.slice(0, 18000) +
+      "\n\"\"\"\n\nResponda apenas com um JSON válido, sem comentários e sem markdown, neste formato exato:\n" +
+      '{"titulo": "string curta de 3 a 6 palavras identificando o tema", "resumo": "resumo direto em português, no máximo 3 frases curtas, só com a ideia central", "destaques": ["ponto 1", "ponto 2"]}' +
+      "\n\nPara \"destaques\", liste de 5 a 7 pontos com boa chance de cair em uma prova sobre esse conteúdo: definições, datas, fórmulas, nomes e conceitos que aparecem com destaque ou se repetem. Cada item deve ter no máximo 12 palavras, sem numeração e sem explicações extras.";
+    return await sample.json(prompt, {modelTier:"default"});
+  }
+
+  async function askAboutDoc(doc, question){
+    var historyLines = doc.chat.map(function(m){
+      return (m.role === "user" ? "Usuário" : "Assistente") + ": " + m.text;
+    }).join("\n");
+    var prompt = "Você é um assistente de estudos respondendo perguntas sobre um PDF específico que o usuário enviou. Baseie-se apenas no conteúdo abaixo. Se a resposta não estiver no conteúdo, diga isso com honestidade em vez de inventar.\n\n" +
+      "Conteúdo do PDF:\n\"\"\"\n" + doc.text.slice(0, 18000) + "\n\"\"\"\n\n" +
+      "Histórico da conversa:\n" + (historyLines || "(nenhuma pergunta ainda)") + "\n\n" +
+      "Pergunta atual do usuário: " + question + "\n\n" +
+      "Responda em no máximo 3 frases curtas, direto ao ponto, sem introdução, sem repetir a pergunta e sem mencionar instruções.";
+    var res = await sample(prompt, {modelTier:"default", cache:false});
+    return res.text;
+  }
+
+  // ---------- history / important rendering ----------
+  var historyGrid = document.getElementById("historyGrid");
+  var historyEmpty = document.getElementById("historyEmpty");
+  var historyNote = document.getElementById("historyNote");
+  var importantGrid = document.getElementById("importantGrid");
+  var importantEmpty = document.getElementById("importantEmpty");
+
+  function cardHtml(d){
+    return '<article class="card" data-id="' + d.id + '">' +
+      '<h3>' + escapeHtml(d.title) + '</h3>' +
+      '<div class="date">' + formatDate(d.createdAt) + '</div>' +
+      '<div class="snippet">' + escapeHtml(d.summary||"") + '</div>' +
+      '<div class="footer">' +
+        '<button class="icon-btn star ' + (d.important?'active':'') + '" data-id="' + d.id + '" aria-label="Marcar como importante">' +
+          '<svg viewBox="0 0 24 24" fill="' + (d.important?'currentColor':'none') + '"><path d="M12 3.5 14.6 9l6 .9-4.3 4.2 1 6-5.3-2.8-5.3 2.8 1-6L3.4 9.9l6-.9L12 3.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>' +
+        '</button>' +
+        '<button class="icon-btn trash" data-id="' + d.id + '" aria-label="Excluir">' +
+          '<svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-9 0 1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+        '</button>' +
+      '</div>' +
+    '</article>';
+  }
+
+  function renderHistory(){
+    historyNote.hidden = usingCloud;
+    if (!usingCloud) historyNote.textContent = "Seus resumos ficam salvos neste navegador.";
+    historyGrid.innerHTML = docs.map(cardHtml).join("");
+    historyEmpty.hidden = docs.length > 0;
+    wireCardButtons(historyGrid);
+  }
+
+  function renderImportant(){
+    var list = docs.filter(function(d){ return d.important; });
+    importantGrid.innerHTML = list.map(cardHtml).join("");
+    importantEmpty.hidden = list.length > 0;
+    wireCardButtons(importantGrid);
+  }
+
+  function wireCardButtons(root){
+    root.querySelectorAll(".card").forEach(function(card){
+      card.addEventListener("click", function(e){
+        if (e.target.closest(".icon-btn")) return;
+        openOverlay(card.getAttribute("data-id"));
+      });
+    });
+    root.querySelectorAll(".star").forEach(function(btn){
+      btn.addEventListener("click", function(e){
+        e.stopPropagation();
+        toggleImportant(btn.getAttribute("data-id"));
+      });
+    });
+    root.querySelectorAll(".trash").forEach(function(btn){
+      wireTrashConfirm(btn, function(id){
+        removeDoc(id);
+      });
+    });
+  }
+
+  function wireTrashConfirm(btn, onConfirm){
+    btn.addEventListener("click", function(e){
+      e.stopPropagation();
+      var id = btn.getAttribute("data-id");
+      if (btn.dataset.confirming === "1"){
+        clearTimeout(btn._confirmTimer);
+        onConfirm(id);
+        return;
+      }
+      btn.dataset.confirming = "1";
+      var originalHtml = btn.innerHTML;
+      btn.classList.add("danger-confirm");
+      btn.textContent = "Excluir?";
+      btn._confirmTimer = setTimeout(function(){
+        btn.dataset.confirming = "0";
+        btn.classList.remove("danger-confirm");
+        btn.innerHTML = originalHtml;
+      }, 2800);
+    });
+  }
+
+  async function toggleImportant(id){
+    var doc = findDoc(id);
+    if (!doc) return;
+    doc.important = !doc.important;
+    await persistUpdate(id, {important: doc.important});
+    renderHistory();
+    renderImportant();
+    if (activeOverlayId === id) updateOverlayStar(doc);
+  }
+
+  async function removeDoc(id){
+    docs = docs.filter(function(d){ return d.id !== id; });
+    await persistDelete(id);
+    renderHistory();
+    renderImportant();
+    if (activeOverlayId === id) closeOverlay();
+  }
+
+  // ---------- overlay ----------
+  var overlay = document.getElementById("overlay");
+  var overlayTitle = document.getElementById("overlayTitle");
+  var overlayDate = document.getElementById("overlayDate");
+  var overlaySummary = document.getElementById("overlaySummary");
+  var overlayHighlights = document.getElementById("overlayHighlights");
+  var overlayStar = document.getElementById("overlayStar");
+  var overlayTrash = document.getElementById("overlayTrash");
+  var chatLog = document.getElementById("chatLog");
+  var chatInput = document.getElementById("chatInput");
+  var chatSend = document.getElementById("chatSend");
+
+  function openOverlay(id){
+    var doc = findDoc(id);
+    if (!doc) return;
+    activeOverlayId = id;
+    overlayTitle.textContent = doc.title;
+    overlayDate.textContent = formatDate(doc.createdAt);
+    overlaySummary.textContent = doc.summary || "";
+    overlayHighlights.innerHTML = (doc.highlights||[]).map(function(h){
+      return "<li>" + escapeHtml(h) + "</li>";
+    }).join("") || "<li>Nenhum destaque gerado.</li>";
+    updateOverlayStar(doc);
+    renderChat(doc);
+    chatInput.value = "";
+    chatInput.disabled = !sample;
+    chatSend.disabled = !sample;
+    chatInput.placeholder = sample ? "Pergunte algo sobre o conteúdo..." : "Chat indisponível sem a função de IA";
+    overlay.hidden = false;
+  }
+
+  function closeOverlay(){
+    overlay.hidden = true;
+    activeOverlayId = null;
+  }
+  document.getElementById("overlayClose").addEventListener("click", closeOverlay);
+
+  function updateOverlayStar(doc){
+    overlayStar.classList.toggle("active", doc.important);
+    var svg = overlayStar.querySelector("svg");
+    svg.setAttribute("fill", doc.important ? "currentColor" : "none");
+  }
+  overlayStar.addEventListener("click", function(){
+    if (activeOverlayId) toggleImportant(activeOverlayId);
+  });
+  wireTrashConfirm(overlayTrash, function(id){ removeDoc(activeOverlayId); });
+
+  function renderChat(doc){
+    chatLog.innerHTML = doc.chat.map(function(m){
+      return '<div class="msg ' + (m.role==="user"?"user":"assistant") + '">' + escapeHtml(m.text) + '</div>';
+    }).join("");
+  }
+
+  async function sendChat(){
+    var doc = findDoc(activeOverlayId);
+    if (!doc || !sample) return;
+    var q = chatInput.value.trim();
+    if (!q) return;
+    chatInput.value = "";
+    doc.chat.push({role:"user", text:q});
+    if (doc.chat.length > 30) doc.chat = doc.chat.slice(-30);
+    renderChat(doc);
+    chatLog.scrollTop = chatLog.scrollHeight;
+
+    var thinking = document.createElement("div");
+    thinking.className = "msg thinking";
+    thinking.textContent = "Pensando...";
+    chatLog.appendChild(thinking);
+    chatInput.disabled = true;
+    chatSend.disabled = true;
+
+    try{
+      var answer = await askAboutDoc(doc, q);
+      doc.chat.push({role:"assistant", text:answer});
+    } catch(e){
+      doc.chat.push({role:"assistant", text:"Não consegui responder agora. Tente novamente em instantes."});
+    }
+    renderChat(doc);
+    chatLog.scrollTop = chatLog.scrollHeight;
+    chatInput.disabled = false;
+    chatSend.disabled = false;
+    chatInput.focus();
+    persistUpdate(doc.id, {chat: doc.chat});
+  }
+  chatSend.addEventListener("click", sendChat);
+  chatInput.addEventListener("keydown", function(e){
+    if (e.key === "Enter") sendChat();
+  });
+
+  // ---------- splash ----------
+  function dismissSplash(){
+    var splash = document.getElementById("splash");
+    splash.classList.add("fade");
+    setTimeout(function(){ splash.hidden = true; }, 480);
+  }
+
+  async function start(){
+    await loadDocs();
+    (function tick(){
+      if (!shownAt){ setTimeout(tick, 150); return; }
+      var left = 3200 - (Date.now() - shownAt);
+      if (left > 0) setTimeout(dismissSplash, left); else dismissSplash();
+    })();
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
